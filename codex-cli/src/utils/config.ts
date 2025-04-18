@@ -15,9 +15,9 @@ import { load as loadYaml, dump as dumpYaml } from "js-yaml";
 import { homedir } from "os";
 import { dirname, join, extname, resolve as resolvePath } from "path";
 
-export const DEFAULT_AGENTIC_MODEL = "o4-mini";
+export const DEFAULT_AGENTIC_MODEL = "gpt-4.1";
 export const DEFAULT_FULL_CONTEXT_MODEL = "gpt-4.1";
-export const DEFAULT_APPROVAL_MODE = AutoApprovalMode.SUGGEST;
+export const DEFAULT_APPROVAL_MODE = AutoApprovalMode.FULL_AUTO;
 export const DEFAULT_INSTRUCTIONS = "";
 
 export const CONFIG_DIR = join(homedir(), ".codex");
@@ -56,6 +56,8 @@ export type StoredConfig = {
     saveHistory?: boolean;
     sensitivePatterns?: Array<string>;
   };
+  /** Preferred code generation language (e.g., 'typescript'). */
+  codeLanguage?: string;
 };
 
 // Minimal config written on first run.  An *empty* model string ensures that
@@ -84,6 +86,8 @@ export type AppConfig = {
     saveHistory: boolean;
     sensitivePatterns: Array<string>;
   };
+  /** Preferred code generation language (e.g., 'typescript'). */
+  codeLanguage: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -268,6 +272,7 @@ export const loadConfig = (
         : DEFAULT_AGENTIC_MODEL),
     instructions: combinedInstructions,
     notify: storedConfig.notify === true,
+    codeLanguage: (storedConfig.codeLanguage || 'typescript'),
   };
 
   // -----------------------------------------------------------------------
@@ -372,10 +377,9 @@ export const saveConfig = (
     mkdirSync(dir, { recursive: true });
   }
 
-  const ext = extname(targetPath).toLowerCase();
-  // Create the config object to save
   const configToSave: StoredConfig = {
     model: config.model,
+    codeLanguage: config.codeLanguage,
   };
 
   // Add history settings if they exist
@@ -387,7 +391,7 @@ export const saveConfig = (
     };
   }
 
-  if (ext === ".yaml" || ext === ".yml") {
+  if (extname(targetPath).toLowerCase() === ".yaml" || extname(targetPath).toLowerCase() === ".yml") {
     writeFileSync(targetPath, dumpYaml(configToSave), "utf-8");
   } else {
     writeFileSync(targetPath, JSON.stringify(configToSave, null, 2), "utf-8");

@@ -500,7 +500,13 @@ export class AgentLoop {
                 reasoning.summary = "auto";
               }
             }
-            const mergedInstructions = [prefix, this.instructions]
+            const TYPESCRIPT_ENFORCEMENT_INSTRUCTION =
+              "All code you generate MUST be valid TypeScript, and MUST be for a plain Node.js application (no frontend or browser code, no React, no HTML, no CSS, no Vite, no Next.js, no frontend frameworks). Use only Node.js APIs, common Node.js packages, and TypeScript best practices. Do NOT generate any frontend or browser code. All code must be for backend/server-side Node.js, written in TypeScript.";
+            const mergedInstructions = [
+              TYPESCRIPT_ENFORCEMENT_INSTRUCTION,
+              prefix,
+              this.instructions,
+            ]
               .filter(Boolean)
               .join("\n");
             if (isLoggingEnabled()) {

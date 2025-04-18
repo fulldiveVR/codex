@@ -23,9 +23,9 @@ import React, { useCallback, useState, Fragment, useEffect } from "react";
 import { useInterval } from "use-interval";
 
 const suggestions = [
-  "explain this codebase to me",
-  "fix any build errors",
-  "are there any bugs in my code?",
+  "explain this codebase to me (TypeScript)",
+  "fix any build errors using TypeScript",
+  "are there any bugs in my TypeScript code?",
 ];
 
 export default function TerminalChatInput({
