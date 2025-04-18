@@ -76,3 +76,16 @@ esbuild
     inject: ["./require-shim.js"],
   })
   .catch(() => process.exit(1));
+
+// Copy system_prompt.md file to dist directory
+const sourceFile = path.resolve('src/system_prompt.md');
+const destFile = path.resolve('dist/system_prompt.md');
+
+try {
+  fs.mkdirSync(path.dirname(destFile), { recursive: true });
+  fs.copyFileSync(sourceFile, destFile);
+  console.log(`Copied ${sourceFile} to ${destFile}`);
+} catch (error) {
+  console.error(`Error copying system_prompt.md: ${error.message}`);
+  process.exit(1);
+}
