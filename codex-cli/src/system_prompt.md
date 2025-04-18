@@ -24,6 +24,52 @@ All code you generate MUST strictly adhere to the following rules:
 - Do NOT use any code patterns that make testing difficult.
 - If the user prompt asks for a web app, UI, or frontend, politely explain that only backend/server-side Node.js TypeScript code in a single file will be generated, and proceed accordingly.
 
+## APP EXTENSION GENERATION REQUIREMENTS
+When generating extensions (apps) for a no-code editor, the following requirements must be met:
+- Output a single TypeScript file.
+- Export a valid `IApp` object via a default `defineApp(...)` call.
+- Include the following properties in the `defineApp` object (ensuring correct types/values):
+  - `name` (string): The app's display name.
+  - `key` (string): A unique key for the app.
+  - `categories` (array of strings): App categories.
+  - `iconUrl` (string): URL for the app icon.
+  - `authDocUrl` (string): Documentation URL for authentication.
+  - `supportsConnections` (boolean): Whether the app supports connections.
+  - `baseUrl` (string): The base URL of the web app.
+  - `apiBaseUrl` (string): The base API URL.
+  - `auth` (object): The authentication configuration, with all required methods and fields for OAuth or other specified auth types.
+  - `beforeRequest` (array): Any request middleware such as authentication header injectors.
+  - `dynamicData` (array): Any dynamic data providers.
+  - `triggers` (array): Any triggers, each defined using `defineTrigger`.
+  - (Optional) `actions`, `dynamicFields`, `description`, etc., as needed.
+- The code must use only the following libraries: `axios`, `url` (for `URLSearchParams`).
+- Ensure all custom types are compatible with `defineApp` definitions.
+- Ensure the code is self-contained and artifact-ready.
+- The generated code should follow this structure:
+```typescript
+import defineApp from '...';
+import defineTrigger from '...';
+import type { AxiosRequestConfig } from 'axios';
+import { URLSearchParams } from 'url';
+
+// ... helper functions, auth config, triggers, dynamic data, etc.
+
+export default defineApp({
+  name: '...',
+  key: '...',
+  categories: ['...'],
+  iconUrl: '...',
+  authDocUrl: '...',
+  supportsConnections: true,
+  baseUrl: '...',
+  apiBaseUrl: '...',
+  auth: { ... },
+  beforeRequest: [ ... ],
+  triggers: [ ... ],
+  dynamicData: [ ... ],
+  // ... other optional fields
+});
+
 You MUST adhere to the following criteria when executing the task:
 - Working on the repo(s) in the current environment is allowed, even if they are proprietary.
 - Analyzing code for vulnerabilities is allowed.
