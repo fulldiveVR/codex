@@ -1,0 +1,146 @@
+# Product Requirements Document: Codex CLI Project
+
+## 1. Overview
+
+This document outlines the requirements for the Codex CLI tool. Its primary goal is to assist users with coding tasks by interpreting natural language prompts, analyzing the project context, and generating/applying code changes or executing commands. This version is specifically tailored to focus *only* on creating software plugins based on user descriptions.
+
+## 2. Core Features
+
+- **Plugin Generation:** The core functionality is to accept a natural language description of a desired plugin and generate a single TypeScript file containing the plugin code.
+- **Contextual Understanding:** The tool analyzes the existing project context (files) to inform the plugin generation process.
+- **Code Application (Optional):** While the primary output is the plugin file content, the underlying agent might still propose filesystem operations (like saving the file) which require user confirmation.
+
+## 3. User Experience
+
+- **Interaction Modes:** Supports both interactive chat and single-pass/quiet modes.
+- **Prompting:** Users provide a natural language description of the plugin they want to create.
+- **Output:** The final output presented to the user should be the content of the generated TypeScript plugin file.
+- **Confirmation:** Users may be prompted to confirm actions like saving the generated file.
+
+## 4. User Interaction Flow
+
+1.  **Initialization:** The user invokes the `codex` CLI, optionally providing an initial prompt (`-p "prompt text"`) and/or image paths (`-i path/to/image.png`). (`cli.tsx`)
+2.  **Mode Determination:** The CLI determines the operating mode (interactive chat vs. quiet/single-pass). (`cli.tsx`)
+3.  **Context Loading:** The application loads relevant files from the current working directory, respecting `.gitignore` patterns. (`singlepass-cli-app.tsx`, potentially shared utils)
+4.  **Prompt Input (Interactive):** In interactive mode, the user is presented with an input prompt (`>>>`). (`terminal-chat-input.tsx`, `terminal-chat-new-input.tsx`)
+    *   Users can type their request.
+    *   Special commands (e.g., `/history`, `/help`, `/model`, `/clear`) are handled.
+    *   Input is submitted (Enter).
+5.  **Prompt Input (Quiet/Single Pass):** The initial prompt from the CLI argument is used. (`cli.tsx`, `singlepass-cli-app.tsx`)
+6.  **Agent Processing:** The user's prompt, along with the loaded file context, is sent to the configured AI model (e.g., OpenAI). (`singlepass-cli-app.tsx`, `AgentLoop` in `agent/`)
+7.  **Response Generation:** The AI agent processes the request and generates a response, which might include:
+    *   Textual explanations or answers.
+    *   Proposed code changes (diffs). (`generateDiffSummary`, `EditedFilesSchema` in `singlepass-cli-app.tsx`)
+    *   Commands to be executed. (`handle-exec-command.ts`)
+8.  **Review/Confirmation:**
+    *   For code changes: The diff is presented to the user for confirmation. (`singlepass-cli-app.tsx` - `ConfirmationPrompt`)
+    *   For commands: The command is presented for review based on the approval policy (`--approval-mode`). Users can approve (y/a), deny (n), explain (x), or edit the denial reason (e). (`handle-exec-command.ts`, `terminal-chat-command-review.tsx`)
+9.  **Execution/Application:** Approved changes are written to the filesystem, and approved commands are executed. (`applyFileOps` in `singlepass-cli-app.tsx`, `execCommand` in `handle-exec-command.ts`)
+10. **Loop (Interactive):** The process repeats from step 4.
+
+## 5. Prompt Handling & Core Logic Locations
+
+*   **Main CLI Entry Point:** `codex-cli/src/cli.tsx`
+*   **Interactive Chat UI & Input:** `codex-cli/src/components/chat/terminal-chat.tsx`, `codex-cli/src/components/chat/terminal-chat-input.tsx` (and `-new-input.tsx`)
+*   **Single Pass/Quiet Mode Logic:** `codex-cli/src/components/singlepass-cli-app.tsx`, `codex-cli/src/cli-singlepass.tsx`
+*   **Agent Loop & AI Interaction:** Likely within `codex-cli/src/utils/agent/` (e.g., `AgentLoop`)
+*   **Command Execution & Approval:** `codex-cli/src/utils/agent/handle-exec-command.ts`, `codex-cli/src/components/chat/terminal-chat-command-review.tsx`
+*   **File Context Handling:** `codex-cli/src/utils/singlepass/context_files.ts`
+*   **Code Diff/Patch Generation:** `codex-cli/src/utils/singlepass/code_diff.ts`
+*   **Prompt Templates/System Instructions:** Potentially defined within the agent logic or loaded from configuration (`config.instructions` mentioned in `cli.tsx`). *Further investigation needed if specific template files exist.*
+
+## 6. Customization: Restricting Goals and Output
+
+**Goal:** Limit the Codex CLI to only accept prompts related to [Specify Your Goal Here, e.g., "refactoring TypeScript functions"] and ensure the final output (if applicable, e.g., after applying changes) is a structured object with specific fields: `{ field1: type, field2: type }`.
+
+**Implementation Strategy:**
+
+1.  **Prompt Input Validation:**
+    *   Modify the input handling logic (e.g., in `onSubmit` within `terminal-chat-input.tsx` or `runSinglePassTask` in `singlepass-cli-app.tsx`).
+    *   Before sending the prompt to the agent, validate if it aligns with the allowed goal (e.g., using keyword checks, regex, or potentially a lightweight classification model/function).
+    *   If the prompt is invalid, display an error message to the user and prevent sending it to the main AI agent.
+2.  **Agent Instruction Modification:**
+    *   Update the core instructions/system prompt provided to the AI agent (`config.instructions`).
+    *   Clearly state the *only* allowed task type (e.g., "You are an AI assistant specialized *only* in refactoring TypeScript functions.").
+    *   Specify the *exact* desired output format (e.g., "After performing the refactoring and applying the changes, output a JSON object with the following structure: `{ originalFunctionName: string, newFunctionName: string, filePath: string }`. Do not output any other text.").
+3.  **Output Parsing/Validation:**
+    *   Modify the logic that handles the *final* output *after* the agent has finished and potentially applied changes. This might be near the end of `runSinglePassTask` or within the `AgentLoop`'s handling of the final response.
+    *   Attempt to parse the agent's final output as the expected JSON object structure.
+    *   If parsing fails or the structure is incorrect, either attempt to re-prompt the agent for the correct format or return a standardized error object.
+    *   Ensure only the validated, structured object is presented as the final result to the user (especially in quiet mode).
+
+**Potential Files to Modify:**
+
+*   `codex-cli/src/components/chat/terminal-chat-input.tsx` (or `-new-input.tsx`) for interactive input validation.
+*   `codex-cli/src/components/singlepass-cli-app.tsx` for single-pass input validation and potentially final output handling.
+*   Configuration files or code sections where `config.instructions` are defined/loaded.
+*   `codex-cli/src/utils/agent/AgentLoop.ts` (or similar) for modifying agent instructions and potentially parsing the final output.
+
+## 7. Technical Architecture
+
+- **CLI Entry Point:** `codex-cli/src/cli.tsx` handles initial invocation and mode determination.
+- **Input Handling:**
+    - Interactive: `codex-cli/src/components/chat/terminal-chat-input.tsx` (and `-new-input.tsx`).
+    - Single-Pass: `codex-cli/src/components/singlepass-cli-app.tsx`.
+- **AI Agent:** An AI model (likely configured via `config.model`) processes the prompt and context (`codex-cli/src/utils/agent/AgentLoop.ts` or similar).
+- **Plugin Structure Definition:** The target output adheres to the `IApp` interface (provided separately). Helper functions like `defineApp`, `defineAction` are expected to be used in the generated code, similar to the provided example plugin.
+- **Output Generation:** The AI agent is instructed to generate a single TypeScript file containing the plugin code.
+- **File Operations:** `codex-cli/src/utils/singlepass/file_ops.ts` and `codex-cli/src/utils/agent/handle-exec-command.ts` manage filesystem interactions (saving files, executing commands), requiring user approval as per policy.
+- **System Instructions:** Core instructions guiding the AI are likely loaded from `config.instructions`.
+
+## 8. Development Roadmap (Task Generation Focus)
+
+The `task-master parse-prd` command will use this document to generate tasks. Key areas for task generation include:
+1.  **Prompt Validation Implementation:** Modify input handling (`terminal-chat-input.tsx`, `singlepass-cli-app.tsx`) to check if the user prompt *only* asks for plugin creation. Reject other types of requests.
+2.  **Agent Instruction Modification:** Update the core AI system prompt (`config.instructions` source) to specialize the agent *exclusively* for generating TypeScript plugins conforming to the `IApp` interface and the provided example structure. Explicitly instruct it to output *only* the code for a single file.
+3.  **Output Handling/Validation:** Adapt the final response processing logic (potentially in `AgentLoop` or `singlepass-cli-app.tsx`) to ensure the output is valid TypeScript code intended for a single file. Validate its basic structure if possible (e.g., contains `export default defineApp`). Present *only* this code block as the final result.
+
+## 9. Logical Dependency Chain
+
+1.  Implement prompt input validation.
+2.  Modify agent instructions for specialized plugin generation.
+3.  Adapt output handling to isolate and validate the generated plugin code.
+
+## 10. Risks and Mitigations
+
+- **Risk:** AI agent may not consistently adhere to the single-file output format or the `IApp` structure.
+    - **Mitigation:** Strong prompting in agent instructions, potentially implement post-generation validation and re-prompting logic. Output validation step is crucial.
+- **Risk:** Input validation might be too strict or too loose.
+    - **Mitigation:** Iteratively refine the validation logic (keywords, regex, etc.) based on testing.
+- **Risk:** Defining the exact scope of "plugin creation" for the input validator might be challenging.
+    - **Mitigation:** Start with clear keywords and refine based on user feedback and examples.
+
+## 11. Appendix
+
+- **IApp Interface:**
+```typescript
+ interface IApp {
+        name: string;
+        key: string;
+        categories: ICategoryType[];
+        iconUrl: string;
+        docUrl?: string;
+        authDocUrl: string;
+        supportsConnections: boolean;
+        apiBaseUrl: string;
+        baseUrl: string;
+        auth?: IAuth;
+        connectionCount?: number;
+        flowCount?: number;
+        beforeRequest?: TBeforeRequest[];
+        dynamicData?: IDynamicData;
+        dynamicFields?: IDynamicFields;
+        triggers?: ITrigger[];
+        actions?: IAction[];
+        description?: string;
+    }
+```
+- **Example Plugin Structure:** (Reference the example provided by the user)
+```typescript
+// Example structure (import statements, dynamic fields, auth, actions, defineApp call)
+import defineApp from '../../helpers/define-app';
+// ... other imports
+// ... dynamic fields, auth, actions definitions
+export default defineApp({
+  // ... IApp properties
+});

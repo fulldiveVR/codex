@@ -1,6 +1,7 @@
 import type { MultilineTextEditorHandle } from "./multiline-editor";
 import type { ReviewDecision } from "../../utils/agent/review.js";
 import type { HistoryEntry } from "../../utils/storage/command-history.js";
+import type { Key} from "ink";
 import type {
   ResponseInputItem,
   ResponseItem,
@@ -17,9 +18,11 @@ import {
   addToHistory,
 } from "../../utils/storage/command-history.js";
 import { clearTerminal, onExit } from "../../utils/terminal.js";
+import { ValidationErrorMessage } from "../validation-error-message";
 import { Box, Text, useApp, useInput, useStdin } from "ink";
 import { fileURLToPath } from "node:url";
 import React, { useCallback, useState, Fragment, useEffect } from "react";
+import { isPluginCreationPrompt } from "src/utils/prompt-validation";
 import { useInterval } from "use-interval";
 
 const suggestions = [
@@ -84,10 +87,8 @@ export default function TerminalChatInput({
   const [history, setHistory] = useState<Array<HistoryEntry>>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [draftInput, setDraftInput] = useState<string>("");
-  // Multiline text editor is now the default input mode.  We keep an
-  // incremental `editorKey` so that we can force‑remount the component and
-  // thus reset its internal buffer after each successful submit.
   const [editorKey, setEditorKey] = useState(0);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Load command history on component mount
   useEffect(() => {
@@ -110,9 +111,9 @@ export default function TerminalChatInput({
   const prevCursorRow = React.useRef<number | null>(null);
 
   useInput(
-    (_input, _key) => {
+    (input: string, key: Key) => {
       if (!confirmationPrompt && !loading) {
-        if (_key.upArrow) {
+        if (key.upArrow) {
           if (DEBUG_HIST) {
             // eslint-disable-next-line no-console
             console.log("[TCI] upArrow", {
@@ -150,13 +151,13 @@ export default function TerminalChatInput({
             setHistoryIndex(newIndex);
             setInput(history[newIndex]?.command ?? "");
             // Re‑mount the editor so it picks up the new initialText.
-            setEditorKey((k) => k + 1);
+            setEditorKey((k: number) => k + 1);
             return; // we handled the key
           }
           // Otherwise let the event propagate so the editor moves the caret.
         }
 
-        if (_key.downArrow) {
+        if (key.downArrow) {
           if (DEBUG_HIST) {
             // eslint-disable-next-line no-console
             console.log("[TCI] downArrow", { historyIndex, draftInput, input });
@@ -169,11 +170,11 @@ export default function TerminalChatInput({
             if (newIndex >= history.length) {
               setHistoryIndex(null);
               setInput(draftInput);
-              setEditorKey((k) => k + 1);
+              setEditorKey((k: number) => k + 1);
             } else {
               setHistoryIndex(newIndex);
               setInput(history[newIndex]?.command ?? "");
-              setEditorKey((k) => k + 1);
+              setEditorKey((k: number) => k + 1);
             }
             return; // handled
           }
@@ -182,11 +183,11 @@ export default function TerminalChatInput({
       }
 
       if (input.trim() === "") {
-        if (_key.tab) {
+        if (key.tab) {
           setSelectedSuggestion(
-            (s) => (s + (_key.shift ? -1 : 1)) % (suggestions.length + 1),
+            (s: number) => (s + (key.shift ? -1 : 1)) % (suggestions.length + 1),
           );
-        } else if (selectedSuggestion && _key.return) {
+        } else if (selectedSuggestion && key.return) {
           const suggestion = suggestions[selectedSuggestion - 1] || "";
           setInput("");
           setSelectedSuggestion(0);
@@ -198,12 +199,17 @@ export default function TerminalChatInput({
             },
           ]);
         }
-      } else if (_input === "\u0003" || (_input === "c" && _key.ctrl)) {
+      } else if (input === "\u0003" || (input === "c" && key.ctrl)) {
         setTimeout(() => {
           app.exit();
           onExit();
           process.exit(0);
         }, 60);
+      }
+
+      // Clear validation error on any other input change
+      if (validationError) {
+        setValidationError(null);
       }
 
       // Update the cached cursor position *after* we've potentially handled
@@ -215,6 +221,7 @@ export default function TerminalChatInput({
 
   const onSubmit = useCallback(
     async (value: string) => {
+      setValidationError(null);
       const inputValue = value.trim();
       if (!inputValue) {
         return;
@@ -288,7 +295,7 @@ export default function TerminalChatInput({
             setHistory([]);
 
             // Emit a system message to confirm the history clear action
-            setItems((prev) => [
+            setItems((prev: Array<ResponseItem>) => [
               ...prev,
               {
                 id: `clearhistory-${Date.now()}`,
@@ -304,6 +311,31 @@ export default function TerminalChatInput({
 
         return;
       }
+
+      // --- Plugin Prompt Validation ---
+      if (!isPluginCreationPrompt(inputValue)) {
+        // Handle special commands first, even if they don't match plugin criteria
+        const isCommand = [
+          "/history",
+          "/help",
+          "/model",
+          "/approval",
+          "q",
+          ":q",
+          "exit",
+          "/clear",
+          "clear",
+          "/clearhistory",
+        ].some((cmd) => inputValue.startsWith(cmd));
+
+        if (!isCommand) {
+          setValidationError(
+            "Invalid prompt. This tool specializes in plugin creation only."
+          );
+          return; // Stop processing if it's not a command and not a plugin request
+        }
+      }
+      // --- End Validation ---
 
       const images: Array<string> = [];
       const text = inputValue
@@ -375,6 +407,7 @@ export default function TerminalChatInput({
         </Box>
       ) : (
         <>
+          {validationError && <ValidationErrorMessage message={validationError} />}
           <Box borderStyle="round">
             <MultilineTextEditor
               ref={editorRef}
@@ -383,11 +416,9 @@ export default function TerminalChatInput({
               initialText={input}
               height={8}
               focus={active}
-              onSubmit={(txt) => {
+              onSubmit={(txt: string) => {
                 onSubmit(txt);
-
-                setEditorKey((k) => k + 1);
-
+                setEditorKey((k: number) => k + 1);
                 setInput("");
                 setHistoryIndex(null);
                 setDraftInput("");
@@ -447,7 +478,7 @@ function TerminalChatInputThinking({
 
   // Animate ellipsis
   useInterval(() => {
-    setDots((prev) => (prev.length < 3 ? prev + "." : ""));
+    setDots((prev: string) => (prev.length < 3 ? prev + "." : ""));
   }, 500);
 
   // Spinner frames with seconds embedded
@@ -522,7 +553,7 @@ function TerminalChatInputThinking({
   // Elapsed time provided via props – no local interval needed.
 
   useInput(
-    (_input, key) => {
+    (_input: string, key: Key) => {
       if (!key.escape) {
         return;
       }

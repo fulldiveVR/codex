@@ -2,7 +2,10 @@
 
 import type { AppConfig } from "../utils/config";
 import type { FileOperation } from "../utils/singlepass/file_ops";
+import type { Key } from "ink";
+import type { JSX } from "react";
 
+import { ValidationErrorMessage } from "./validation-error-message";
 import Spinner from "./vendor/ink-spinner"; // Third‑party / vendor components
 import TextInput from "./vendor/ink-text-input";
 import {
@@ -11,6 +14,7 @@ import {
   getBaseUrl,
   getApiKey,
 } from "../utils/config";
+import { isPluginCreationPrompt } from "../utils/prompt-validation";
 import {
   generateDiffSummary,
   generateEditSummary,
@@ -93,7 +97,7 @@ function WorkingSpinner({ text = "Working" }: { text?: string }) {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setDots((d) => (d.length < 3 ? d + "." : ""));
+      setDots((d: string) => (d.length < 3 ? d + "." : ""));
     }, 400);
     return () => clearInterval(interval);
   }, []);
@@ -219,7 +223,7 @@ function InputPrompt({
   const [draftInput, setDraftInput] = useState<string>("");
   const [, setShowDirInfo] = useState(false);
 
-  useInput((input, key) => {
+  useInput((input: string, key: Key) => {
     if ((key.ctrl && (input === "c" || input === "C")) || input === "\u0003") {
       // Ctrl+C pressed – treat as interrupt
       if (onCtrlC) {
@@ -289,7 +293,7 @@ function ConfirmationPrompt({
   message: string;
   onResult: (accept: boolean) => void;
 }) {
-  useInput((input, key) => {
+  useInput((input: string, key: Key) => {
     if (key.return || input.toLowerCase() === "y") {
       onResult(true);
     } else if (input.toLowerCase() === "n" || key.escape) {
@@ -305,7 +309,7 @@ function ConfirmationPrompt({
 }
 
 function ContinuePrompt({ onResult }: { onResult: (cont: boolean) => void }) {
-  useInput((input, key) => {
+  useInput((input: string, key: Key) => {
     if (input.toLowerCase() === "y" || key.return) {
       onResult(true);
     } else if (input.toLowerCase() === "n" || key.escape) {
@@ -346,6 +350,7 @@ export function SinglePassApp({
     | "skipped"
     | "applied"
     | "noops"
+    | "validation_error"
     | "error"
     | "interrupted"
   >("init");
@@ -367,6 +372,7 @@ export function SinglePassApp({
   const [showDirInfo, setShowDirInfo] = useState(false);
   const contextLimit = MAX_CONTEXT_CHARACTER_LIMIT;
   const inputPromptValueRef = useRef<string>("");
+  const [validationErrorMsg, setValidationErrorMsg] = useState<string | null>(null);
 
   /* ---------------------------- Load file context --------------------------- */
   useEffect(() => {
@@ -386,6 +392,18 @@ export function SinglePassApp({
   /* -------------------------------- Helpers -------------------------------- */
 
   async function runSinglePassTask(userPrompt: string) {
+    setValidationErrorMsg(null);
+
+    if (!isPluginCreationPrompt(userPrompt)) {
+      if (userPrompt !== "/context" && userPrompt !== ":context") {
+        setValidationErrorMsg(
+          "Invalid prompt. This tool specializes in plugin creation only."
+        );
+        setState("validation_error");
+        return;
+      }
+    }
+
     setPrompt(userPrompt);
     setShowSpinner(true);
     setState("thinking");
@@ -485,8 +503,10 @@ export function SinglePassApp({
 
   /* --------------------------------- Render -------------------------------- */
 
-  useInput((_input, key) => {
-    if (state === "applied") {
+  useInput((_input: string, key: Key) => {
+    if (state === "validation_error") {
+      setState("prompt");
+    } else if (state === "applied") {
       setState("prompt");
     } else if (
       (key.ctrl && (_input === "c" || _input === "C")) ||
@@ -521,6 +541,15 @@ export function SinglePassApp({
       <Box flexDirection="column">
         <Text>Directory: {rootPath}</Text>
         <Text color="gray">Loading file context…</Text>
+      </Box>
+    );
+  }
+
+  if (state === "validation_error") {
+    return (
+      <Box flexDirection="column">
+        <ValidationErrorMessage message={validationErrorMsg || undefined} />
+        <Text color="gray">Press any key to return to the prompt.</Text>
       </Box>
     );
   }
@@ -617,6 +646,7 @@ export function SinglePassApp({
           <InputPrompt
             message=">>> "
             onSubmit={(val) => {
+              setValidationErrorMsg(null);
               // Support /context as a command to show the directory structure.
               if (val === "/context" || val === ":context") {
                 setShowDirInfo(true);

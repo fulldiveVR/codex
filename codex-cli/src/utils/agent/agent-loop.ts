@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import type { ReviewDecision } from "./review.js";
 import type { ApplyPatchCommand, ApprovalPolicy } from "../../approvals.js";
 import type { AppConfig } from "../config.js";
@@ -12,6 +13,7 @@ import type { Reasoning } from "openai/resources.mjs";
 
 import { OPENAI_TIMEOUT_MS, getApiKey, getBaseUrl } from "../config.js";
 import { log } from "../logger/log.js";
+//import { extractPluginCode, formatPluginCode } from '../output-parser';
 import { parseToolCallArguments } from "../parsers.js";
 import { responsesCreateViaChatCompletions } from "../responses.js";
 import {
@@ -22,6 +24,7 @@ import {
   setSessionId,
 } from "../session.js";
 import { handleExecCommand } from "./handle-exec-command.js";
+//import { validateGeneratedPluginCode } from '../validation/plugin-validator';
 import { randomUUID } from "node:crypto";
 import OpenAI, { APIConnectionTimeoutError } from "openai";
 
@@ -417,13 +420,12 @@ export class AgentLoop {
       }
       // Record when we start "thinking" so we can report accurate elapsed time.
       const thinkingStart = Date.now();
-      // Bump generation so that any late events from previous runs can be
-      // identified and dropped.
-      const thisGeneration = ++this.generation;
-
       // Reset cancellation flag and stream for a fresh run.
       this.canceled = false;
       this.currentStream = null;
+      // Bump generation so that any late events from previous runs can be
+      // identified and dropped.
+      const thisGeneration = ++this.generation;
 
       // Create a fresh AbortController for this run so that tool calls from a
       // previous run do not accidentally get signalled.
