@@ -3,6 +3,22 @@ import * as fs from "fs";
 import * as path from "path";
 
 const OUT_DIR = 'dist'
+
+// Create a __dirname shim for ES modules
+const createDirnameShim = async () => {
+  const shimContent = `
+// Shim for __dirname in ES modules
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// Make __dirname available in ES modules
+globalThis.__dirname = typeof __dirname !== 'undefined' 
+  ? __dirname 
+  : dirname(fileURLToPath(import.meta.url));
+`;
+  await fs.promises.writeFile('./dirname-shim.js', shimContent, 'utf-8');
+};
+
 /**
  * ink attempts to import react-devtools-core in an ESM-unfriendly way:
  *
@@ -69,6 +85,9 @@ if (isDevBuild) {
   plugins.push(devShebangPlugin);
 }
 
+// Create the __dirname shim file
+await createDirnameShim();
+
 esbuild
   .build({
     entryPoints: ["src/cli.tsx"],
@@ -80,6 +99,6 @@ esbuild
     minify: !isDevBuild,
     sourcemap: isDevBuild ? "inline" : true,
     plugins,
-    inject: ["./require-shim.js"],
+    inject: ["./require-shim.js", "./dirname-shim.js"],
   })
   .catch(() => process.exit(1));

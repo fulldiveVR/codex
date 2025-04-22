@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 // NOTE: We intentionally point the TypeScript import at the source file
 // (`./auto-approval-mode.ts`) instead of the emitted `.js` bundle.  This makes
 // the module resolvable when the project is executed via `ts-node`, which
@@ -13,15 +14,64 @@ import { log } from "./logger/log.js";
 import { providers } from "./providers.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { load as loadYaml, dump as dumpYaml } from "js-yaml";
-import { homedir } from "os";
+//import { homedir } from "os";
 import { dirname, join, extname, resolve as resolvePath } from "path";
+
+// Generic function to read all environment variables from .env file
+function loadEnvFile(): Record<string, string> {
+  try {
+    const envPath = join(process.cwd(),'codex-cli', '.env');
+
+    console.log(`envPath: ${envPath}`);
+    
+    if (!existsSync(envPath)) {
+      return {};
+    }
+    
+    const envContent = readFileSync(envPath, 'utf-8');
+    const lines = envContent.split('\n');
+    const envVars: Record<string, string> = {};
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      // Skip comments and empty lines
+      if (trimmedLine === '' || trimmedLine.startsWith('#')) {
+        continue;
+      }
+      
+      const equalIndex = trimmedLine.indexOf('=');
+      if (equalIndex > 0) {
+        const key = trimmedLine.substring(0, equalIndex).trim();
+        let value = trimmedLine.substring(equalIndex + 1).trim();
+        // Remove surrounding quotes if present
+        value = value.replace(/^["']|["']$/g, '');
+        envVars[key] = value;
+      }
+    }
+    
+    return envVars;
+  } catch (error) {
+    log(`[codex] Error reading .env file: ${error}`);
+    return {};
+  }
+}
+
+// Load environment variables from .env file once at startup
+const envVars = loadEnvFile();
+
+// Helper to get env variable from process.env or .env file
+function getEnvVar(name: string, defaultValue: string = ''): string {
+  return process.env[name] || envVars[name] || defaultValue;
+}
 
 export const DEFAULT_AGENTIC_MODEL = "gpt-4.1";
 export const DEFAULT_FULL_CONTEXT_MODEL = "gpt-4.1";
 export const DEFAULT_APPROVAL_MODE = AutoApprovalMode.SUGGEST;
 export const DEFAULT_INSTRUCTIONS = "";
 
-export const CONFIG_DIR = join(homedir(), ".codex");
+export const CONFIG_DIR = join(process.cwd(), '.codex');
+
+console.log(`CONFIG_DIR: ${CONFIG_DIR}`);
 export const CONFIG_JSON_FILEPATH = join(CONFIG_DIR, "config.json");
 export const CONFIG_YAML_FILEPATH = join(CONFIG_DIR, "config.yaml");
 export const CONFIG_YML_FILEPATH = join(CONFIG_DIR, "config.yml");
@@ -35,7 +85,7 @@ export const INSTRUCTIONS_FILEPATH = join(CONFIG_DIR, "instructions.md");
 export const OPENAI_TIMEOUT_MS =
   parseInt(process.env["OPENAI_TIMEOUT_MS"] || "0", 10) || undefined;
 export const OPENAI_BASE_URL = process.env["OPENAI_BASE_URL"] || "";
-export let OPENAI_API_KEY = process.env["OPENAI_API_KEY"] || "";
+export let OPENAI_API_KEY = getEnvVar("OPENAI_API_KEY");
 
 export function setApiKey(apiKey: string): void {
   OPENAI_API_KEY = apiKey;
@@ -53,9 +103,9 @@ export function getApiKey(provider: string): string | undefined {
   const providerInfo = providers[provider.toLowerCase()];
   if (providerInfo) {
     if (providerInfo.name === "Ollama") {
-      return process.env[providerInfo.envKey] ?? "dummy";
+      return getEnvVar(providerInfo.envKey, "dummy");
     }
-    return process.env[providerInfo.envKey];
+    return getEnvVar(providerInfo.envKey);
   }
 
   return undefined;
