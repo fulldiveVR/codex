@@ -8,12 +8,7 @@ import type { JSX } from "react";
 import { ValidationErrorMessage } from "./validation-error-message";
 import Spinner from "./vendor/ink-spinner"; // Third‑party / vendor components
 import TextInput from "./vendor/ink-text-input";
-import {
-  OPENAI_TIMEOUT_MS,
-  OPENAI_BASE_URL as _OPENAI_BASE_URL,
-  getBaseUrl,
-  getApiKey,
-} from "../utils/config";
+import { OPENAI_TIMEOUT_MS, getBaseUrl, getApiKey } from "../utils/config";
 import { isPluginCreationPrompt } from "../utils/prompt-validation";
 import {
   generateDiffSummary,
@@ -417,8 +412,8 @@ export function SinglePassApp({
       });
 
       const openai = new OpenAI({
-        apiKey: getApiKey(config.provider ?? "openai"),
-        baseURL: getBaseUrl(config.provider ?? "openai"),
+        apiKey: getApiKey(config.provider),
+        baseURL: getBaseUrl(config.provider),
         timeout: OPENAI_TIMEOUT_MS,
       });
       const chatResp = await openai.beta.chat.completions.parse({
