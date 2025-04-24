@@ -253,7 +253,7 @@ export function loadProjectDoc(cwd: string, explicitPath?: string): string {
   if (explicitPath) {
     filepath = resolvePath(cwd, explicitPath);
     if (!existsSync(filepath)) {
-      // eslint-disable-next-line no-console
+       
       console.warn(`codex: project doc not found at ${filepath}`);
       filepath = null;
     }
@@ -268,7 +268,7 @@ export function loadProjectDoc(cwd: string, explicitPath?: string): string {
   try {
     const buf = readFileSync(filepath);
     if (buf.byteLength > PROJECT_DOC_MAX_BYTES) {
-      // eslint-disable-next-line no-console
+       
       console.warn(
         `codex: project doc '${filepath}' exceeds ${PROJECT_DOC_MAX_BYTES} bytes – truncating.`,
       );

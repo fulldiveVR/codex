@@ -1,16 +1,13 @@
 import type { ValidationResult, ValidationOptions, ValidationIssue } from './plugin-validation-types';
 
-// eslint-disable-next-line import/order
+import { validateWithTsAST } from './ast-structure-validator';
 import { ValidationSeverity } from './plugin-validation-types';
-
-// Separate type/value imports from other imports
-
 import { validateStructureWithRegex } from './structure-validator';
 import { validateWithTsCompiler } from './ts-compiler-validator';
 
 /**
  * Orchestrates the validation of generated plugin code.
- * Runs both regex-based structural checks and TS compiler checks.
+ * Runs both TypeScript AST-based structure checks and TS compiler checks.
  *
  * @param pluginCode The string content of the generated plugin.
  * @param options Validation options (optional).
@@ -18,7 +15,7 @@ import { validateWithTsCompiler } from './ts-compiler-validator';
  */
 export function validateGeneratedPluginCode(
     pluginCode: string,
-    _options?: ValidationOptions
+    options?: ValidationOptions
 ): ValidationResult {
     // Basic check: Does it look like a code block?
     // Improve this heuristic as needed.
@@ -34,8 +31,8 @@ export function validateGeneratedPluginCode(
         };
     }
 
-    // Run structural regex checks
-    const structureResult = validateStructureWithRegex(pluginCode);
+    // Run AST-based structure validation (preferred over regex for better accuracy)
+    const structureResult = validateWithTsAST(pluginCode, options);
 
     // Run TypeScript compiler checks
     const compilerResult = validateWithTsCompiler(pluginCode);
@@ -51,4 +48,31 @@ export function validateGeneratedPluginCode(
         issues: allIssues,
         // Optionally add metadata like timing here
     };
+}
+
+/**
+ * Validates code using the legacy regex structure validator for backwards compatibility.
+ * 
+ * @deprecated Use validateGeneratedPluginCode instead which uses AST-based validation.
+ * @param pluginCode The string content of the generated plugin.
+ * @returns Combined ValidationResult.
+ */
+export function validateWithRegex(
+    pluginCode: string,
+): ValidationResult {
+    // Basic check: Does it look like a code block?
+    const trimmedCode = pluginCode.trim();
+    if (!trimmedCode.startsWith('import') && !trimmedCode.includes('defineApp')) {
+        return {
+            isValid: false,
+            issues: [{
+                severity: ValidationSeverity.ERROR,
+                message: 'Output does not appear to be valid plugin code (missing imports or defineApp).',
+                code: 'VALIDATION_NOT_CODE'
+            }]
+        };
+    }
+
+    // Run structural regex checks for backwards compatibility
+    return validateStructureWithRegex(pluginCode);
 }
