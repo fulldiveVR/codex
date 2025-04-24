@@ -1,140 +1,94 @@
-# Product Requirements Document: Codex CLI Project
+# Product Requirements Document: Generated Plugin Validation, Testing, and Correction (v3)
 
-## 1. Overview
+## 1. Introduction
 
-This document outlines the requirements for the Codex CLI tool. Its primary goal is to assist users with coding tasks by interpreting natural language prompts, analyzing the project context, and generating/applying code changes or executing commands. This version is specifically tailored to focus *only* on creating software plugins based on user descriptions.
+This document outlines the requirements for enhancing the Codex CLI with capabilities to validate, test, and automatically correct **generated TypeScript plugin code snippets** (as defined in `instructions.md`) during execution. The goal is to improve the reliability and correctness of AI-generated plugins by integrating automated checks and feedback loops, evaluating existing utilities for potential use.
 
-## 2. Core Features
+## 2. Goals
 
-- **Plugin Generation:** The core functionality is to accept a natural language description of a desired plugin and generate a single TypeScript file containing the plugin code.
-- **Contextual Understanding:** The tool analyzes the existing project context (files) to inform the plugin generation process.
-- **Code Application (Optional):** While the primary output is the plugin file content, the underlying agent might still propose filesystem operations (like saving the file) which require user confirmation.
+*   **Improve Plugin Quality:** Ensure generated TypeScript plugins are structurally valid, syntactically correct according to project standards, and functionally sound based on test cases before final output.
+*   **Increase Reliability:** Reduce errors caused by incorrect or incomplete AI-generated plugin code.
+*   **Automate Correction:** Implement a mechanism to automatically fix common issues identified during validation and testing based on structured feedback.
+*   **Provide Actionable Feedback:** Offer clear, structured results from validation and testing to guide the automated correction process or manual refinement.
 
-## 3. User Experience
+## 3. Functional Requirements
 
-- **Interaction Modes:** Supports both interactive chat and single-pass/quiet modes.
-- **Prompting:** Users provide a natural language description of the plugin they want to create.
-- **Output:** The final output presented to the user should be the content of the generated TypeScript plugin file.
-- **Confirmation:** Users may be prompted to confirm actions like saving the generated file.
+### 3.1. Plugin Code Validation
 
-## 4. User Interaction Flow
+*   **FR-VALIDATE-01:** The system **SHOULD implement** capabilities to validate the structural integrity of generated TypeScript **plugin code snippets** against the expected framework format (e.g., presence and basic structure of `defineApp`, `actions`, `auth`). **Evaluation should be done** to determine if existing utilities (e.g., `plugin-validator.ts`, `structure-validator.ts`) can fulfill this requirement.
+*   **FR-VALIDATE-02:** The system **SHOULD implement** capabilities to check generated TypeScript **plugin code snippets** for compilation errors using the TypeScript compiler (`tsc`), ensuring type safety and basic syntax correctness. **Evaluation should be done** to determine if existing utilities (e.g., `ts-compiler-validator.ts`) can fulfill this requirement. *(Note: Specific linting rules beyond basic compilation/structure might need separate consideration).*
+*   **FR-VALIDATE-03:** Structured validation results (specific structural errors, compiler errors with line numbers and messages) from the implemented validation mechanisms MUST be captured and made available programmatically for the correction step.
+*   **FR-VALIDATE-04:** The validation process should be integrated into the agent loop (`utils/agent/agent-loop.ts`) or made callable on demand against a specified **plugin code snippet**.
 
-1.  **Initialization:** The user invokes the `codex` CLI, optionally providing an initial prompt (`-p "prompt text"`) and/or image paths (`-i path/to/image.png`). (`cli.tsx`)
-2.  **Mode Determination:** The CLI determines the operating mode (interactive chat vs. quiet/single-pass). (`cli.tsx`)
-3.  **Context Loading:** The application loads relevant files from the current working directory, respecting `.gitignore` patterns. (`singlepass-cli-app.tsx`, potentially shared utils)
-4.  **Prompt Input (Interactive):** In interactive mode, the user is presented with an input prompt (`>>>`). (`terminal-chat-input.tsx`, `terminal-chat-new-input.tsx`)
-    *   Users can type their request.
-    *   Special commands (e.g., `/history`, `/help`, `/model`, `/clear`) are handled.
-    *   Input is submitted (Enter).
-5.  **Prompt Input (Quiet/Single Pass):** The initial prompt from the CLI argument is used. (`cli.tsx`, `singlepass-cli-app.tsx`)
-6.  **Agent Processing:** The user's prompt, along with the loaded file context, is sent to the configured AI model (e.g., OpenAI). (`singlepass-cli-app.tsx`, `AgentLoop` in `agent/`)
-7.  **Response Generation:** The AI agent processes the request and generates a response, which might include:
-    *   Textual explanations or answers.
-    *   Proposed code changes (diffs). (`generateDiffSummary`, `EditedFilesSchema` in `singlepass-cli-app.tsx`)
-    *   Commands to be executed. (`handle-exec-command.ts`)
-8.  **Review/Confirmation:**
-    *   For code changes: The diff is presented to the user for confirmation. (`singlepass-cli-app.tsx` - `ConfirmationPrompt`)
-    *   For commands: The command is presented for review based on the approval policy (`--approval-mode`). Users can approve (y/a), deny (n), explain (x), or edit the denial reason (e). (`handle-exec-command.ts`, `terminal-chat-command-review.tsx`)
-9.  **Execution/Application:** Approved changes are written to the filesystem, and approved commands are executed. (`applyFileOps` in `singlepass-cli-app.tsx`, `execCommand` in `handle-exec-command.ts`)
-10. **Loop (Interactive):** The process repeats from step 4.
+### 3.2. Universal Plugin Function Testing (Utilizing Sandbox)
 
-## 5. Prompt Handling & Core Logic Locations
+*   **FR-TEST-01:** A universal function/tool (`testGeneratedPluginFunction`) MUST be created to execute a specific function (e.g., an Action's `run` method) within a generated **plugin snippet** using provided test cases.
+*   **FR-TEST-02:** The testing tool MUST accept the generated **plugin code snippet** (as text), the name/key of the function to test, and a set of test data (input arguments/context simulating the `$` global variable, and expected output/behavior/state changes).
+*   **FR-TEST-03:** The testing tool MUST execute the target function **within the existing secure sandbox environment** provided by utilities in `utils/agent/sandbox` (e.g., using `raw-exec.ts` or similar sandboxed execution mechanisms) to prevent side effects and ensure safe execution. Mocking of necessary framework parts (`$`, `defineApp`) will be required within this sandboxed context.
+*   **FR-TEST-04:** The testing tool MUST compare the actual output/behavior of the function against the expected output/behavior defined in the test data.
+*   **FR-TEST-05:** The testing tool MUST return **structured test results** indicating pass/fail status for each test case, including actual vs. expected outputs/state on failure. This constitutes the feedback for correction.
 
-*   **Main CLI Entry Point:** `codex-cli/src/cli.tsx`
-*   **Interactive Chat UI & Input:** `codex-cli/src/components/chat/terminal-chat.tsx`, `codex-cli/src/components/chat/terminal-chat-input.tsx` (and `-new-input.tsx`)
-*   **Single Pass/Quiet Mode Logic:** `codex-cli/src/components/singlepass-cli-app.tsx`, `codex-cli/src/cli-singlepass.tsx`
-*   **Agent Loop & AI Interaction:** Likely within `codex-cli/src/utils/agent/` (e.g., `AgentLoop`)
-*   **Command Execution & Approval:** `codex-cli/src/utils/agent/handle-exec-command.ts`, `codex-cli/src/components/chat/terminal-chat-command-review.tsx`
-*   **File Context Handling:** `codex-cli/src/utils/singlepass/context_files.ts`
-*   **Code Diff/Patch Generation:** `codex-cli/src/utils/singlepass/code_diff.ts`
-*   **Prompt Templates/System Instructions:** Potentially defined within the agent logic or loaded from configuration (`config.instructions` mentioned in `cli.tsx`). *Further investigation needed if specific template files exist.*
-
-## 6. Customization: Restricting Goals and Output
-
-**Goal:** Limit the Codex CLI to only accept prompts related to [Specify Your Goal Here, e.g., "refactoring TypeScript functions"] and ensure the final output (if applicable, e.g., after applying changes) is a structured object with specific fields: `{ field1: type, field2: type }`.
-
-**Implementation Strategy:**
-
-1.  **Prompt Input Validation:**
-    *   Modify the input handling logic (e.g., in `onSubmit` within `terminal-chat-input.tsx` or `runSinglePassTask` in `singlepass-cli-app.tsx`).
-    *   Before sending the prompt to the agent, validate if it aligns with the allowed goal (e.g., using keyword checks, regex, or potentially a lightweight classification model/function).
-    *   If the prompt is invalid, display an error message to the user and prevent sending it to the main AI agent.
-2.  **Agent Instruction Modification:**
-    *   Update the core instructions/system prompt provided to the AI agent (`config.instructions`).
-    *   Clearly state the *only* allowed task type (e.g., "You are an AI assistant specialized *only* in refactoring TypeScript functions.").
-    *   Specify the *exact* desired output format (e.g., "After performing the refactoring and applying the changes, output a JSON object with the following structure: `{ originalFunctionName: string, newFunctionName: string, filePath: string }`. Do not output any other text.").
-3.  **Output Parsing/Validation:**
-    *   Modify the logic that handles the *final* output *after* the agent has finished and potentially applied changes. This might be near the end of `runSinglePassTask` or within the `AgentLoop`'s handling of the final response.
-    *   Attempt to parse the agent's final output as the expected JSON object structure.
-    *   If parsing fails or the structure is incorrect, either attempt to re-prompt the agent for the correct format or return a standardized error object.
-    *   Ensure only the validated, structured object is presented as the final result to the user (especially in quiet mode).
-
-**Potential Files to Modify:**
-
-*   `codex-cli/src/components/chat/terminal-chat-input.tsx` (or `-new-input.tsx`) for interactive input validation.
-*   `codex-cli/src/components/singlepass-cli-app.tsx` for single-pass input validation and potentially final output handling.
-*   Configuration files or code sections where `config.instructions` are defined/loaded.
-*   `codex-cli/src/utils/agent/AgentLoop.ts` (or similar) for modifying agent instructions and potentially parsing the final output.
-
-## 7. Technical Architecture
-
-- **CLI Entry Point:** `codex-cli/src/cli.tsx` handles initial invocation and mode determination.
-- **Input Handling:**
-    - Interactive: `codex-cli/src/components/chat/terminal-chat-input.tsx` (and `-new-input.tsx`).
-    - Single-Pass: `codex-cli/src/components/singlepass-cli-app.tsx`.
-- **AI Agent:** An AI model (likely configured via `config.model`) processes the prompt and context (`codex-cli/src/utils/agent/AgentLoop.ts` or similar).
-- **Plugin Structure Definition:** The target output adheres to the `IApp` interface (provided separately). Helper functions like `defineApp`, `defineAction` are expected to be used in the generated code, similar to the provided example plugin.
-- **Output Generation:** The AI agent is instructed to generate a single TypeScript file containing the plugin code.
-- **File Operations:** `codex-cli/src/utils/singlepass/file_ops.ts` and `codex-cli/src/utils/agent/handle-exec-command.ts` manage filesystem interactions (saving files, executing commands), requiring user approval as per policy.
-- **System Instructions:** Core instructions guiding the AI are likely loaded from `config.instructions`.
-
-## 8. Development Roadmap (Task Generation Focus)
-
-The `task-master parse-prd` command will use this document to generate tasks. Key areas for task generation include:
-1.  **Prompt Validation Implementation:** Modify input handling (`terminal-chat-input.tsx`, `singlepass-cli-app.tsx`) to check if the user prompt *only* asks for plugin creation. Reject other types of requests.
-2.  **Agent Instruction Modification:** Update the core AI system prompt (`config.instructions` source) to specialize the agent *exclusively* for generating TypeScript plugins conforming to the `IApp` interface and the provided example structure. Explicitly instruct it to output *only* the code for a single file.
-3.  **Output Handling/Validation:** Adapt the final response processing logic (potentially in `AgentLoop` or `singlepass-cli-app.tsx`) to ensure the output is valid TypeScript code intended for a single file. Validate its basic structure if possible (e.g., contains `export default defineApp`). Present *only* this code block as the final result.
-
-## 9. Logical Dependency Chain
-
-1.  Implement prompt input validation.
-2.  Modify agent instructions for specialized plugin generation.
-3.  Adapt output handling to isolate and validate the generated plugin code.
-
-## 10. Risks and Mitigations
-
-- **Risk:** AI agent may not consistently adhere to the single-file output format or the `IApp` structure.
-    - **Mitigation:** Strong prompting in agent instructions, potentially implement post-generation validation and re-prompting logic. Output validation step is crucial.
-- **Risk:** Input validation might be too strict or too loose.
-    - **Mitigation:** Iteratively refine the validation logic (keywords, regex, etc.) based on testing.
-- **Risk:** Defining the exact scope of "plugin creation" for the input validator might be challenging.
-    - **Mitigation:** Start with clear keywords and refine based on user feedback and examples.
-
-## 11. Appendix
-
-- **IApp Interface:**
-```typescript
- interface IApp {
-        name: string;
-        key: string;
-        categories: ICategoryType[];
-        iconUrl: string;
-        docUrl?: string;
-        authDocUrl: string;
-        supportsConnections: boolean;
-        apiBaseUrl: string;
-        baseUrl: string;
-        auth?: IAuth;
-        connectionCount?: number;
-        flowCount?: number;
-        beforeRequest?: TBeforeRequest[];
-        dynamicData?: IDynamicData;
-        dynamicFields?: IDynamicFields;
-        triggers?: ITrigger[];
-        actions?: IAction[];
-        description?: string;
+*Example Test Data Structure (Conceptual):*
+```json
+[
+  {
+    "description": "Test case 1: Action 'exampleAction' with valid input",
+    "functionToTest": "exampleAction.run",
+    "inputContext": {
+      "step": {
+        "parameters": { "inputParam": "hello" }
+      },
+      "auth": { "data": { "apiKey": "test-key" } }
+    },
+    "expectedBehavior": {
+      "setActionItemCalledWith": { "raw": { "result": "Processed: hello" } }
     }
+  },
+  {
+    "description": "Test case 2: Action 'exampleAction' with different input",
+    "functionToTest": "exampleAction.run",
+    "inputContext": {
+      "step": {
+        "parameters": { "inputParam": "world" }
+      },
+       "auth": { "data": { "apiKey": "test-key" } }
+    },
+    "expectedBehavior": {
+      "setActionItemCalledWith": { "raw": { "result": "Processed: world" } }
+    }
+  }
+]
 ```
+
+### 3.3. Automated Correction (Integrating with Patching)
+
+*   **FR-CORRECT-01:** Based on the **structured feedback** from the validation (FR-VALIDATE-03) and testing (FR-TEST-05) stages, the system SHOULD attempt to automatically correct the generated **plugin code snippet**.
+*   **FR-CORRECT-02:** This correction process MAY involve invoking another AI model instance, providing it with the original **plugin code snippet**, the specific **structured error/failure results**, and instructions to fix them according to the plugin requirements and framework (`instructions.md`).
+*   **FR-CORRECT-03:** The corrected **plugin code snippet** MUST be re-validated and re-tested (using the mechanisms defined in FR-VALIDATE-01, FR-VALIDATE-02, FR-TEST-01) to confirm the fix.
+*   **FR-CORRECT-04:** The application of the corrected code SHOULD utilize the existing code patching mechanisms (e.g., `apply-patch.ts`, `parse-apply-patch.ts` found in `utils/agent/`) to modify the snippet in place or generate a new version.
+*   **FR-CORRECT-05:** A mechanism should be in place within the agent loop (`utils/agent/agent-loop.ts`) to prevent infinite correction loops (e.g., limit correction attempts per snippet/error type).
+
+## 4. Non-Functional Requirements
+
+*   **NFR-PERF-01:** Validation and testing processes for plugin snippets should execute within acceptable time limits.
+*   **NFR-SEC-01:** Plugin function execution during testing **must leverage the existing sandbox implementation** (`utils/agent/sandbox`) for security.
+*   **NFR-LOG-01:** All validation, testing, and correction steps pertinent to plugin generation, including structured results and errors, MUST be logged.
+
+## 5. Potential Components / Tools (Revised)
+
+*   Validation Implementation (Handles structural/compiler checks - FR-VALIDATE-01, FR-VALIDATE-02). *Consider reusing/adapting `utils/validation` components.*
+*   `testGeneratedPluginFunction(pluginCode: string, functionKey: string, testCases: PluginTestCase[]): Promise<PluginTestResult[]>` (New tool needed, leverages sandbox - FR-TEST-01 to FR-TEST-05).
+*   `correctPluginCode(originalPluginCode: string, errors: (ValidationResult | PluginTestResult)[]): Promise<CorrectedCodeResult>` (New tool/logic needed, integrates with AI and patching - FR-CORRECT-01 to FR-CORRECT-04).
+*   (Optional) `lintPluginCode(pluginCode: string): Promise<LinterResult>` (If specific ESLint-style linting beyond compiler/structure checks is desired).
+
+## 6. Future Considerations
+
+*   Support for testing asynchronous plugin functions and triggers.
+*   Standardized test case generation based on plugin action/trigger definitions.
+*   More sophisticated, rule-based correction strategies alongside AI correction.
+
+## 7. Appendix
+
 - **Example Plugin Structure:** (Reference the example provided by the user)
 ```typescript
 // Example structure (import statements, dynamic fields, auth, actions, defineApp call)
