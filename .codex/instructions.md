@@ -96,9 +96,9 @@ Before finalizing the plugin implementation, verify:
 ### 2. Research API Documentation
 
 - Instead of using axios lib - use $.http field to generate required requests
-- Locate official API documentation for endpoints, parameters, and authentication
-- Identify rate limits, required headers, and response formats
-- Understand error handling requirements
+  - Locate official API documentation for endpoints, parameters, and authentication
+  - Identify rate limits, required headers, and response formats
+  - Understand error handling requirements
 
 ### 3. Plan Plugin Structure
 
