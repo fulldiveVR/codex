@@ -42,13 +42,17 @@ interface ComponentStructure {
 const COMPONENT_STRUCTURES: Record<PluginComponent, ComponentStructure> = {
   [PluginComponent.DEFINE_APP]: {
     required: true,
-    requiredProperties: ['name', 'key', 'actions'],
+    requiredProperties: ['name', 'key', 'categories', 'iconUrl', 'authDocUrl', 'supportsConnections', 'apiBaseUrl'],
     validationRules: [
       createTypeValidator('name', 'string'),
       createTypeValidator('key', 'string'),
-      createTypeValidator('actions', 'array'),
+      createTypeValidator('categories', 'array'),
+      createTypeValidator('iconUrl', 'string'),
+      createTypeValidator('authDocUrl', 'string'),
+      createTypeValidator('supportsConnections', 'boolean'),
+      createTypeValidator('apiBaseUrl', 'string'),
+      createTypeValidator('actions', 'array', ValidationSeverity.WARNING),
       createTypeValidator('description', 'string', ValidationSeverity.WARNING),
-      createTypeValidator('categories', 'array', ValidationSeverity.WARNING),
       createTypeValidator('dynamicData', 'array', ValidationSeverity.WARNING),
       createTypeValidator('dynamicFields', 'array', ValidationSeverity.WARNING),
       validatePluginStructure,
@@ -56,20 +60,21 @@ const COMPONENT_STRUCTURES: Record<PluginComponent, ComponentStructure> = {
   },
   [PluginComponent.ACTIONS]: {
     required: false,
-    requiredProperties: ['key', 'name'],
+    requiredProperties: ['key', 'name', 'mode', 'description'],
     validationRules: [
       createTypeValidator('key', 'string'),
       createTypeValidator('name', 'string'),
+      createTypeValidator('mode', 'string'),
+      createTypeValidator('description', 'string'),
+      createArrayItemsValidator('arguments', ['label', 'key', 'type', 'required'], ValidationSeverity.WARNING),
       validateActionImplementation,
-      createArrayItemsValidator('inputs', ['name', 'key', 'type'], ValidationSeverity.WARNING),
-      createArrayItemsValidator('outputs', ['name', 'key', 'type'], ValidationSeverity.WARNING),
     ],
   },
   [PluginComponent.AUTH]: {
     required: false, // Some plugins might not require auth
-    requiredProperties: ['type'],
+    requiredProperties: [''],
     validationRules: [
-      createTypeValidator('type', 'string'),
+      createTypeValidator('type', 'string', ValidationSeverity.WARNING),
       createArrayItemsValidator('fields', ['key', 'label', 'type'], ValidationSeverity.WARNING),
       validateAuthFields,
     ],
@@ -78,17 +83,23 @@ const COMPONENT_STRUCTURES: Record<PluginComponent, ComponentStructure> = {
     required: false, // Triggers array is optional in defineApp
     requiredProperties: ['name', 'key', 'type', 'description'], // Required for each trigger object
     validationRules: [
-      // Add specific validation rules for trigger properties if needed beyond validateTriggerProperties
+      createTypeValidator('key', 'string'),
+      createTypeValidator('name', 'string'),
+      createTypeValidator('type', 'string'),
+      createTypeValidator('mode', 'string'),
+      createTypeValidator('description', 'string'),
+      createArrayItemsValidator('arguments', ['label', 'key', 'type', 'required'], ValidationSeverity.WARNING),
       validateDependsOnProperty, // Check dependsOn within each trigger object
     ],
   },
   [PluginComponent.FIELDS]: {
     required: false,
-    requiredProperties: ['key', 'label', 'type'],
+    requiredProperties: ['key', 'label', 'type', 'required'],
     validationRules: [
       createTypeValidator('key', 'string'),
       createTypeValidator('label', 'string'),
       createTypeValidator('type', 'string'),
+      createTypeValidator('required', 'boolean'),
       validateDependsOnProperty,
     ],
   },
@@ -642,90 +653,275 @@ function validateAuthStructure(authProperty: ts.PropertyAssignment): Array<Enhan
 function validateAuthType(authType: string, authObj: ts.ObjectLiteralExpression): Array<EnhancedValidationIssue> {
   const issues: Array<EnhancedValidationIssue> = [];
   const properties = extractObjectProperties(authObj);
-  
-  // Different validation based on auth type
-  switch (authType) {
-    case 'api_key': {
-      // For API Key, check if an API key field is defined
-      if (!properties['fields'] || !ts.isArrayLiteralExpression(properties['fields'])) {
-        const objPos = getNodePosition(authObj);
+  const objPos = getNodePosition(authObj);
+
+  // Helper to check for required properties for a given type
+  const checkRequiredProps = (requiredProps: Array<string>, codePrefix: string) => {
+    for (const prop of requiredProps) {
+      if (!properties[prop]) {
         issues.push({
           severity: ValidationSeverity.ERROR,
-          message: "API Key authentication requires a 'fields' array property.",
-          code: 'STRUCTURE_APIKEY_MISSING_FIELDS',
-          location: {
-            line: objPos.line,
-            column: objPos.column,
-          },
+          message: `'${authType}' authentication requires a '${prop}' property.`,
+          code: `STRUCTURE_${codePrefix}_MISSING_PROPERTY`,
+          location: { line: objPos.line, column: objPos.column },
           component: PluginComponent.AUTH,
         });
+      }
+    }
+  };
+
+  // Helper to validate the 'fields' array if present
+  const validateFieldsArray = () => {
+    if (properties['fields'] && !ts.isArrayLiteralExpression(properties['fields'])) {
+      const fieldsPos = getNodePosition(properties['fields']);
+      issues.push({
+        severity: ValidationSeverity.ERROR,
+        message: "The 'fields' property, if present, must be an array.",
+        code: 'STRUCTURE_AUTH_FIELDS_NOT_ARRAY',
+        location: { line: fieldsPos.line, column: fieldsPos.column },
+        component: PluginComponent.AUTH,
+      });
+    } else if (properties['fields'] && ts.isArrayLiteralExpression(properties['fields'])) {
+      // Optionally add more specific validation for fields here
+      // e.g., check if each field has required properties like key, label, type
+      issues.push(...createArrayItemsValidator('fields', ['key', 'label', 'type'], ValidationSeverity.WARNING)(authObj));
+    }
+  };
+
+  switch (authType.toLowerCase()) { // Use lowerCase for robustness
+    case 'manual': // Renamed from api_key for clarity, covers general field-based auth
+      // Manual/API Key auth typically relies on the 'fields' array for configuration.
+      // It MUST have a 'fields' array.
+      if (!properties['fields'] || !ts.isArrayLiteralExpression(properties['fields'])) {
+        issues.push({
+          severity: ValidationSeverity.ERROR,
+          message: `'${authType}' authentication requires a 'fields' array property defining the required inputs.`,
+          code: 'STRUCTURE_MANUAL_MISSING_FIELDS',
+          location: { line: objPos.line, column: objPos.column },
+          component: PluginComponent.AUTH,
+          suggestion: "Add a 'fields' array with objects defining 'key', 'label', and 'type' for each required input.",
+        });
+      } else if ((properties['fields'] as ts.ArrayLiteralExpression).elements.length === 0) {
+        const fieldsPos = getNodePosition(properties['fields']);
+         issues.push({
+            severity: ValidationSeverity.ERROR,
+            message: `The 'fields' array for '${authType}' authentication cannot be empty.`,
+            code: 'STRUCTURE_MANUAL_EMPTY_FIELDS',
+            location: { line: fieldsPos.line, column: fieldsPos.column },
+            component: PluginComponent.AUTH,
+          });
       } else {
-        // Validate the fields
-        const fieldsArray = properties['fields'] as ts.ArrayLiteralExpression;
-        if (fieldsArray.elements.length === 0) {
+         // Validate the structure of items within the fields array
+         validateFieldsArray();
+      }
+      // It also requires verifyCredentials and isStillVerified functions
+      checkRequiredProps(['verifyCredentials', 'isStillVerified'], 'MANUAL');
+      break;
+
+    case 'oauth':
+    {
+      // OAuth requires specific top-level properties and a specific field definition.
+      const requiredTopLevelProps = ['type', 'fields', 'verifyCredentials', 'isStillVerified'];
+      checkRequiredProps(requiredTopLevelProps, 'OAUTH');
+
+      // OAuth also requires verifyCredentials and isStillVerified
+      // Handled by the checkRequiredProps above.
+
+      // It MUST have a 'fields' array containing exactly one field: the 'oAuthRedirectUrl' definition.
+
+      // Validate the 'fields' array structure and content
+      const fieldsProp = properties['fields'];
+
+      if (fieldsProp && ts.isArrayLiteralExpression(fieldsProp)) {
+        const fieldsArray = fieldsProp as ts.ArrayLiteralExpression;
+
+        // 1. Check for exactly one element
+        if (fieldsArray.elements.length !== 1) {
           const fieldsPos = getNodePosition(fieldsArray);
           issues.push({
             severity: ValidationSeverity.ERROR,
-            message: "API Key authentication requires at least one field in the 'fields' array.",
-            code: 'STRUCTURE_APIKEY_EMPTY_FIELDS',
-            location: {
-              line: fieldsPos.line,
-              column: fieldsPos.column,
-            },
+            message: `OAuth authentication requires the 'fields' array to contain exactly one item (the 'oAuthRedirectUrl' definition).`,
+            code: 'STRUCTURE_OAUTH_INVALID_FIELD_COUNT',
+            location: { line: fieldsPos.line, column: fieldsPos.column },
             component: PluginComponent.AUTH,
           });
+        } else {
+          // 2. Validate the single field definition
+          const fieldElement = fieldsArray.elements[0];
+          if (fieldElement && ts.isObjectLiteralExpression(fieldElement)) {
+            const fieldProps = extractObjectProperties(fieldElement);
+            const keyProp = fieldProps['key'];
+
+            // Check if the key is 'oAuthRedirectUrl'
+            if (!keyProp || !ts.isStringLiteral(keyProp) || keyProp.text !== 'oAuthRedirectUrl') {
+              const keyPos = keyProp ? getNodePosition(keyProp) : getNodePosition(fieldElement);
+              issues.push({
+                severity: ValidationSeverity.ERROR,
+                message: `The single field in the 'fields' array for OAuth authentication must have the key 'oAuthRedirectUrl'.`,
+                code: 'STRUCTURE_OAUTH_INVALID_FIELD_KEY',
+                location: { line: keyPos.line, column: keyPos.column },
+                component: PluginComponent.AUTH,
+              });
+            }
+            // Note: We are only checking the key as per the request. Full validation could be added here.
+
+          } else {
+            // If the single element is not an object literal
+            const fieldPos = getNodePosition(fieldElement);
+            issues.push({
+              severity: ValidationSeverity.ERROR,
+              message: `The item in the 'fields' array for OAuth authentication must be an object literal.`,
+              code: 'STRUCTURE_OAUTH_FIELD_NOT_OBJECT',
+              location: { line: fieldPos.line, column: fieldPos.column },
+              component: PluginComponent.AUTH,
+            });
+          }
         }
+      } else if (fieldsProp === undefined) {
+        // If 'fields' is entirely missing, we need to report that (unless it's optional for OAuth)
+        // Assuming 'fields' is required for OAuth to contain the redirect URL field:
+        issues.push({
+            severity: ValidationSeverity.ERROR,
+            message: `OAuth authentication requires a 'fields' array containing the 'oAuthRedirectUrl' field definition.`,
+            code: 'STRUCTURE_OAUTH_MISSING_FIELDS_ARRAY',
+            location: { line: objPos.line, column: objPos.column }, // Position of the auth object
+            component: PluginComponent.AUTH,
+          });
+      } else {
+        // If fieldsProp exists but is not an array
+        const fieldsPos = getNodePosition(properties['fields']);
+         issues.push({
+            severity: ValidationSeverity.ERROR,
+            message: `The 'fields' property for OAuth authentication must be an array.`,
+            code: 'STRUCTURE_OAUTH_FIELDS_NOT_ARRAY',
+            location: { line: fieldsPos.line, column: fieldsPos.column },
+            component: PluginComponent.AUTH,
+          });
       }
       break;
     }
-      
-    case 'oauth2': {
-      // For OAuth2, check for required OAuth properties
-      const requiredOAuthProps = ['authUrl', 'tokenUrl', 'scope'];
-      for (const prop of requiredOAuthProps) {
-        if (!properties[prop]) {
-          const objPos = getNodePosition(authObj);
+
+    case 'cookies':
+    {
+      // Cookies auth requires a specific structure
+      const requiredTopLevelProps = ['type', 'fields', 'verifyCredentials', 'isStillVerified'];
+      checkRequiredProps(requiredTopLevelProps, 'COOKIE');
+
+      // Ensure fields array is present and not empty for credentials
+      const fieldsProp = properties['fields'];
+      if (fieldsProp && ts.isArrayLiteralExpression(fieldsProp)) {
+        const fieldsArray = fieldsProp as ts.ArrayLiteralExpression;
+
+        // 1. Check for exactly one element in the fields array
+        if (fieldsArray.elements.length !== 1) {
+          const fieldsPos = getNodePosition(fieldsArray);
           issues.push({
             severity: ValidationSeverity.ERROR,
-            message: `OAuth2 authentication requires a '${prop}' property.`,
-            code: 'STRUCTURE_OAUTH2_MISSING_PROPERTY',
-            location: {
-              line: objPos.line,
-              column: objPos.column,
-            },
+            message: `'cookies' authentication requires the 'fields' array to contain exactly one field definition.`,
+            code: 'STRUCTURE_COOKIE_INVALID_FIELD_COUNT',
+            location: { line: fieldsPos.line, column: fieldsPos.column },
             component: PluginComponent.AUTH,
           });
+        } else {
+          // 2. Validate the structure of that single field definition
+          const fieldDef = fieldsArray.elements[0];
+          if (fieldDef && ts.isObjectLiteralExpression(fieldDef)) {
+            const fieldProps = extractObjectProperties(fieldDef);
+            const fieldPos = getNodePosition(fieldDef);
+            const expectedFieldProps = ['key', 'label', 'type', 'required', 'readOnly', 'clickToCopy'];
+
+            // Check presence of all expected properties
+            for (const prop of expectedFieldProps) {
+              if (!fieldProps[prop]) {
+                issues.push({
+                  severity: ValidationSeverity.ERROR,
+                  message: `The field definition in 'cookies' auth is missing the required property '${prop}'.`,
+                  code: 'STRUCTURE_COOKIE_FIELD_MISSING_PROP',
+                  location: { line: fieldPos.line, column: fieldPos.column },
+                  component: PluginComponent.AUTH,
+                });
+              }
+            }
+
+            // Check specific values for certain properties
+            const checkFieldValue = (propName: string, expectedKind: ts.SyntaxKind, expectedValue: string | boolean, code: string) => {
+              const propNode = fieldProps[propName];
+              if (propNode && propNode.kind !== expectedKind) {
+                 const propPos = getNodePosition(propNode);
+                  issues.push({
+                    severity: ValidationSeverity.ERROR,
+                    message: `Property '${propName}' in the 'cookies' field definition must be '${expectedValue}'.`,
+                    code: code,
+                    location: { line: propPos.line, column: propPos.column },
+                    component: PluginComponent.AUTH,
+                  });
+              } else if (propNode && ts.isStringLiteral(propNode) && propNode.text !== expectedValue) {
+                  // Extra check for string literals in case kind matches but text doesn't (though unlikely for 'string')
+                  const propPos = getNodePosition(propNode);
+                  issues.push({
+                    severity: ValidationSeverity.ERROR,
+                    message: `Property '${propName}' in the 'cookies' field definition must have the value "${expectedValue}". Found "${propNode.text}".`,
+                    code: code,
+                    location: { line: propPos.line, column: propPos.column },
+                    component: PluginComponent.AUTH,
+                  });
+              }
+            };
+
+            checkFieldValue('type', ts.SyntaxKind.StringLiteral, 'string', 'STRUCTURE_COOKIE_FIELD_INVALID_TYPE');
+            checkFieldValue('required', ts.SyntaxKind.TrueKeyword, true, 'STRUCTURE_COOKIE_FIELD_INVALID_REQUIRED');
+            checkFieldValue('readOnly', ts.SyntaxKind.TrueKeyword, true, 'STRUCTURE_COOKIE_FIELD_INVALID_READONLY');
+            checkFieldValue('clickToCopy', ts.SyntaxKind.FalseKeyword, false, 'STRUCTURE_COOKIE_FIELD_INVALID_CLICKTOCOPY');
+
+          } else {
+            const fieldPos = getNodePosition(fieldDef);
+            issues.push({
+              severity: ValidationSeverity.ERROR,
+              message: `The element in the 'fields' array for 'cookies' auth must be an object literal.`,
+              code: 'STRUCTURE_COOKIE_FIELD_NOT_OBJECT',
+              location: { line: fieldPos.line, column: fieldPos.column },
+              component: PluginComponent.AUTH,
+            });
+          }
         }
+      } else if (fieldsProp === undefined) {
+         // This case is handled by checkRequiredProps checking for 'fields' existence.
+         // If we reach here and fieldsProp is undefined, it means checkRequiredProps already added an error.
+      } else {
+         // If fieldsProp exists but is not an array
+          const fieldsPos = getNodePosition(properties['fields']);
+         issues.push({
+            severity: ValidationSeverity.ERROR,
+            message: `The 'fields' property for 'cookies' authentication must be an array.`,
+            code: 'STRUCTURE_COOKIE_FIELDS_NOT_ARRAY',
+            location: { line: fieldsPos.line, column: fieldsPos.column },
+            component: PluginComponent.AUTH,
+          });
       }
       break;
     }
-      
-    // Add more auth types as needed
-      
-    default: {
+
+    default:
+    {
       // For unknown auth types, add a warning
       if (properties['type']) {
-        const typeNode = properties['type'];
-        // We need to ensure typeNode is a Node before getting position
-        const typePos = getNodePosition(typeNode as ts.Node);
+        const typeNode = properties['type'] as ts.Node;
+        const typePos = getNodePosition(typeNode);
         issues.push({
           severity: ValidationSeverity.WARNING,
-          message: `Unknown authentication type '${authType}'. Supported types are 'api_key' and 'oauth2'.`,
+          message: `Unknown or unsupported authentication type '${authType}'. Supported types are 'manual', 'oauth', 'cookies'.`,
           code: 'STRUCTURE_UNKNOWN_AUTH_TYPE',
-          location: {
-            line: typePos.line,
-            column: typePos.column,
-          },
+          location: { line: typePos.line, column: typePos.column },
           component: PluginComponent.AUTH,
         });
       }
       break;
     }
   }
-  
-  // Validate dependsOn property if present
-  issues.push(...validateDependsOnProperty(authObj as ts.ObjectLiteralExpression));
-  
+
+  // Validate dependsOn property if present (moved from validateAuthStructure)
+  // issues.push(...validateDependsOnProperty(authObj)); // Keep dependsOn validation separate if needed elsewhere
+
   return issues;
 }
 

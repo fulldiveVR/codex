@@ -1,0 +1,114 @@
+# Simple Note-Taking API Plugin PRD (Enhanced)
+
+## Background
+Users often need a quick way to jot down notes or ideas without switching contexts significantly. This plugin aims to integrate a basic note-taking capability directly into their workflow via a simple API.
+
+## Plugin Purpose
+Create a plugin that connects to a hypothetical "Simple Notes" API service to allow users to create, retrieve, list, and delete text notes.
+
+## Plugin Metadata
+*   **Plugin Name:** Simple Notes
+*   **Suggested Key:** `simple-notes`
+*   **Categories:** `Productivity`, `Utility`
+*   **Icon URL:** `{BASE_ICON_URL}/apps/simple-notes/favicon.svg`
+*   **Auth Doc URL:** `{DOCS_URL}/apps/simple-notes/connection`
+*   **Doc URL:** `{DOCS_URL}/apps/simple-notes`
+*   **Supports Connections:** `true` (uses API Key auth)
+*   **API Base URL:** `https://api.simplenotes.example.com/v1`
+*   **Base URL:** `https://simplenotes.example.com` (Hypothetical service homepage)
+
+## Functional Requirements
+*(Same as before)*
+1. Create a new note with a title and content.
+2. Retrieve a specific note by its ID.
+3. List all existing notes (returning titles and IDs).
+4. Delete a note by its ID.
+5. Notes associated with the authenticated user.
+
+## Technical Specifications
+1.  **API:** Hypothetical "Simple Notes" REST API.
+2.  **Authentication:** Bearer Token (API Key) via `Authorization: Bearer <USER_API_KEY>` header. See "Plugin Settings".
+3.  **API Format:** JSON request bodies and responses.
+4.  **Error Handling:**
+    *   **400 Bad Request:** Throw `Error("Missing required field (title or content).")` on Create Note.
+    *   **401 Unauthorized:** Throw `Error("Invalid API Key. Please check your connection settings.")` on any request. The auth `verifyCredentials` should also handle this.
+    *   **404 Not Found:** Throw `Error("Note not found with the specified ID.")` on Get/Delete Note.
+    *   **429 Too Many Requests:** Throw `Error("API rate limit exceeded. Please try again later.")`
+    *   **5xx Server Error:** Throw `Error("The Simple Notes API encountered a server error. Please try again.")`
+    *   **Network/Other Errors:** Throw `Error("Failed to connect to Simple Notes API: [Original Error Message]")`
+
+## API Endpoints
+*(Same as before, details reiterated)*
+1.  **Create Note:** `POST /notes`
+    *   Body: `{ "title": string, "content": string }`
+    *   Response (201): `{ "id": string, "title": string, "createdAt": string }`
+2.  **Get Note:** `GET /notes/{noteId}`
+    *   Response (200): `{ "id": string, "title": string, "content": string, "createdAt": string, "updatedAt": string }`
+3.  **List Notes:** `GET /notes`
+    *   Response (200): `{ "notes": [ { "id": string, "title": string } ] }`
+4.  **Delete Note:** `DELETE /notes/{noteId}`
+    *   Response (204): No Content
+
+## Plugin Settings (Auth Fields)
+```typescript
+// IField[] definition for auth
+[
+  {
+    key: 'apiKey',
+    label: 'API Key',
+    type: 'string' as const,
+    required: true,
+    description: 'Your personal API Key for the Simple Notes service.',
+  }
+]
+```
+*   **Auth Verification:** `verifyCredentials` should make a simple authenticated call (e.g., `GET /notes` with `limit=1`) to check the key validity. `isStillVerified` can do the same.
+
+## Action Definitions
+
+### 1. Create Note
+*   **Key:** `createNote`
+*   **Name:** Create Note
+*   **Description:** Creates a new note in Simple Notes.
+*   **Arguments (`IField[]`):**
+    ```typescript
+    [
+      { key: 'title', label: 'Title', type: 'string' as const, required: true, description: 'The title of the note.' },
+      { key: 'content', label: 'Content', type: 'string' as const, required: true, description: 'The main content of the note.' }
+    ]
+    ```
+*   **Expected Output (`$.setActionItem({ raw: ... })`):** `{ id: string, title: string, createdAt: string }` (from API 201 response)
+
+### 2. Get Note
+*   **Key:** `getNote`
+*   **Name:** Get Note
+*   **Description:** Retrieves the full content of a specific note by its ID.
+*   **Arguments (`IField[]`):**
+    ```typescript
+    [
+      { key: 'noteId', label: 'Note ID', type: 'string' as const, required: true, description: 'The unique ID of the note to retrieve.' }
+    ]
+    ```
+*   **Expected Output (`$.setActionItem({ raw: ... })`):** `{ id: string, title: string, content: string, createdAt: string, updatedAt: string }` (from API 200 response)
+
+### 3. List Notes
+*   **Key:** `listNotes`
+*   **Name:** List Notes
+*   **Description:** Retrieves a list of all your notes (ID and Title only).
+*   **Arguments (`IField[]`):** `[]` (None needed)
+*   **Expected Output (`$.setActionItem({ raw: ... })`):** `{ notes: Array<{ id: string, title: string }> }` (from API 200 response)
+
+### 4. Delete Note
+*   **Key:** `deleteNote`
+*   **Name:** Delete Note
+*   **Description:** Permanently deletes a specific note by its ID.
+*   **Arguments (`IField[]`):**
+    ```typescript
+    [
+      { key: 'noteId', label: 'Note ID', type: 'string' as const, required: true, description: 'The unique ID of the note to delete.' }
+    ]
+    ```
+*   **Expected Output (`$.setActionItem({ raw: ... })`):** `{ success: true, message: "Note deleted successfully." }` (Constructed after successful 204 response)
+
+## Dynamic Components
+*   None anticipated for this version. A future enhancement could add dynamic data to list notes for selection in the "Get Note" or "Delete Note" actions.

@@ -10,12 +10,14 @@ import type {
   ResponseCreateParams,
   FunctionTool,
 } from "openai/resources/responses/responses.mjs";
+// eslint-disable-next-line import/order
 import type { Reasoning } from "openai/resources.mjs";
 
 import { OPENAI_TIMEOUT_MS, getApiKey, getBaseUrl } from "../config.js";
 import { log } from "../logger/log.js";
 //import { extractPluginCode, formatPluginCode } from '../output-parser';
 import { parseToolCallArguments } from "../parsers.js";
+import { handleCompleteResponse } from '../response-handler';
 import { responsesCreateViaChatCompletions } from "../responses.js";
 import {
   ORIGIN,
@@ -640,7 +642,7 @@ export class AgentLoop {
         // prompts) and so that freshly generated `function_call_output`s are
         // shown immediately.
         // Figure out what subset of `turnInput` constitutes *new* information
-        // for the UI so that we don’t spam the interface with repeats of the
+        // for the UI so that we don't spam the interface with repeats of the
         // entire transcript on every iteration when response storage is
         // disabled.
         const deltaInput = this.disableResponseStorage
@@ -928,6 +930,13 @@ export class AgentLoop {
               }
 
               if (event.type === "response.completed") {
+                // --- START: Call the response handler --- 
+                handleCompleteResponse(event.response).catch((error: unknown) => {
+                  console.error("Error in handleCompleteResponse:", error instanceof Error ? error.message : error);
+                  // Optionally add more robust error reporting here
+                });
+                // --- END: Call the response handler ---
+
                 if (thisGeneration === this.generation && !this.canceled) {
                   for (const item of event.response.output) {
                     stageItem(item as ResponseItem);

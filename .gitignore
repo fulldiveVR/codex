@@ -104,3 +104,5 @@ tasks/
 .windsurfrules
 .cursorrules
 task-complexity-report.json
+
+tmp/

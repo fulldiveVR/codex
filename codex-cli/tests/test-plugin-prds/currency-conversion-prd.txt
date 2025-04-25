@@ -1,0 +1,118 @@
+# Currency Conversion Plugin PRD (Enhanced)
+
+## Background
+Users dealing with international transactions, travel planning, or financial analysis often need to quickly convert currency values.
+
+## Plugin Purpose
+Develop a plugin that uses the ExchangeRate-API V6 service to perform conversions between different world currencies and retrieve latest rates.
+
+## Plugin Metadata
+*   **Plugin Name:** Currency Converter (ExchangeRate-API)
+*   **Suggested Key:** `currency-converter-exchangerateapi`
+*   **Categories:** `Finance`, `Utility`, `Travel`
+*   **Icon URL:** `{BASE_ICON_URL}/apps/currency-converter-exchangerateapi/favicon.svg` (or generic currency icon)
+*   **Auth Doc URL:** `{DOCS_URL}/apps/currency-converter-exchangerateapi/connection`
+*   **Doc URL:** `{DOCS_URL}/apps/currency-converter-exchangerateapi`
+*   **Supports Connections:** `true` (uses API Key)
+*   **API Base URL:** `https://v6.exchangerate-api.com/v6/{apiKey}` (*Note: Key is part of the path*)
+*   **Base URL:** `https://www.exchangerate-api.com`
+
+## Functional Requirements
+*(Same as before)*
+1. Convert an amount from source to target currency.
+2. Retrieve the latest exchange rate between two currencies.
+3. Specify amount, source currency code (3-letter), and target currency code (3-letter).
+
+## Technical Specifications
+1.  **API:** ExchangeRate-API V6 (`https://v6.exchangerate-api.com`).
+2.  **Authentication:** API Key required, provided by the user. Key is part of the URL path: `/v6/{apiKey}/...`.
+3.  **API Format:** JSON responses.
+4.  **Error Handling:**
+    *   **401 Unauthorized / `error-type: "invalid-key"`:** Throw `Error("Invalid ExchangeRate-API Key. Please check your connection settings.")` (Handle via auth verify and action calls).
+    *   **404 Not Found / `error-type: "unsupported-code"`:** Throw `Error("One or both currency codes are unsupported or invalid.")`
+    *   **400 Bad Request / `error-type: "malformed-request"`:** Throw `Error("Invalid request format sent to API.")` (Should be less common with correct implementation).
+    *   **`error-type: "inactive-account"`:** Throw `Error("Your ExchangeRate-API account is inactive.")`
+    *   **Network/Other Errors:** Throw `Error("Failed to connect to ExchangeRate-API: [Original Error Message]")`
+
+## API Endpoints (Base URL: `https://v6.exchangerate-api.com/v6/{apiKey}`)
+1.  **Get Latest Rates (for verification/dynamic data):** `GET /latest/{BASE_CURRENCY}`
+    *   Response (200): `{ "result": "success", "base_code": "...", "conversion_rates": { ... }, "time_last_update_utc": "..." }`
+2.  **Pair Conversion:** `GET /pair/{BASE_CURRENCY}/{TARGET_CURRENCY}/{AMOUNT}`
+    *   Response (200): `{ "result": "success", "base_code": "...", "target_code": "...", "conversion_rate": number, "conversion_result": number, "time_last_update_utc": "..." }`
+3.  **Supported Codes (for dynamic data):** `GET /codes`
+    *   Response (200): `{ "result": "success", "supported_codes": [ ["AED", "UAE Dirham"], ["AFN", "Afghan Afghani"], ... ] }`
+
+
+## Plugin Settings (Auth Fields)
+```typescript
+// IField[] definition for auth
+[
+  {
+    key: 'apiKey',
+    label: 'API Key',
+    type: 'string' as const,
+    required: true,
+    description: 'Your V6 API Key from ExchangeRate-API.com.',
+  }
+]
+```
+*   **Auth Verification:** `verifyCredentials` should call the `/codes` endpoint or `/latest/USD` using the provided key to check validity. `isStillVerified` can do the same.
+
+## Action Definitions
+
+### 1. Convert Currency Amount
+*   **Key:** `convertAmount`
+*   **Name:** Convert Currency Amount
+*   **Description:** Converts a specific amount from one currency to another using the latest rate.
+*   **Arguments (`IField[]`):**
+    ```typescript
+    [
+      { key: 'amount', label: 'Amount', type: 'string' as const, appearance: 'number', required: true, description: 'The amount of money to convert.' },
+      { key: 'sourceCurrency', label: 'From Currency', type: 'dropdown' as const, required: true, description: 'The 3-letter code of the currency to convert from (e.g., USD).', source: { type: 'query', name: 'getDynamicData', arguments: [ { name: 'key', value: 'listCurrencies' } ] } },
+      { key: 'targetCurrency', label: 'To Currency', type: 'dropdown' as const, required: true, description: 'The 3-letter code of the currency to convert to (e.g., EUR).', source: { type: 'query', name: 'getDynamicData', arguments: [ { name: 'key', value: 'listCurrencies' } ] } }
+    ]
+    ```
+*   **Expected Output (`$.setActionItem({ raw: ... })`):**
+    ```json
+    {
+      "sourceCurrency": "USD", // From API response base_code
+      "targetCurrency": "EUR", // From API response target_code
+      "originalAmount": 100.00, // User input, converted to number
+      "convertedAmount": 92.50, // From API response conversion_result
+      "exchangeRate": 0.9250, // From API response conversion_rate
+      "rateTimestamp": "..." // From API response time_last_update_utc
+    }
+    ```
+
+### 2. Get Exchange Rate
+*   **Key:** `getRate`
+*   **Name:** Get Exchange Rate
+*   **Description:** Retrieves the direct exchange rate between two currencies.
+*   **Arguments (`IField[]`):**
+    ```typescript
+    [
+       { key: 'sourceCurrency', label: 'Base Currency', type: 'dropdown' as const, required: true, description: 'The 3-letter code of the base currency (e.g., USD).', source: { type: 'query', name: 'getDynamicData', arguments: [ { name: 'key', value: 'listCurrencies' } ] } },
+       { key: 'targetCurrency', label: 'Target Currency', type: 'dropdown' as const, required: true, description: 'The 3-letter code of the target currency (e.g., EUR).', source: { type: 'query', name: 'getDynamicData', arguments: [ { name: 'key', value: 'listCurrencies' } ] } }
+    ]
+    ```
+*   **Implementation Note:** This might require calling the `/pair/{BASE}/{TARGET}/1` endpoint to get the direct rate.
+*   **Expected Output (`$.setActionItem({ raw: ... })`):**
+    ```json
+    {
+      "sourceCurrency": "USD", // From API response base_code
+      "targetCurrency": "EUR", // From API response target_code
+      "exchangeRate": 0.9250, // From API response conversion_rate
+      "rateTimestamp": "..." // From API response time_last_update_utc
+    }
+    ```
+
+## Dynamic Components
+
+### 1. List Currencies (`dynamicData`)
+*   **Key:** `listCurrencies`
+*   **Name:** List Supported Currencies
+*   **Implementation:**
+    *   Call the `/codes` endpoint (`https://v6.exchangerate-api.com/v6/{apiKey}/codes`).
+    *   Requires authentication (API Key).
+    *   Map the `supported_codes` array (e.g., `["USD", "US Dollar"]`) to the `IFieldDropdownOption` format: `{ value: "USD", label: "USD - US Dollar" }`.
+    *   Return `{ data: [...] }` containing the mapped options.

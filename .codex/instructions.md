@@ -478,8 +478,8 @@ Use the following structure as a reference. Adapt placeholders (`TODO:`) based o
 
 ```typescript
 // --- Imports ---
-import defineAction from "../helpers/define-action";
-import defineApp from "../helpers/define-app";
+import defineAction from "../../helpers/define-action";
+import defineApp from "../../helpers/define-app";
 import type { IGlobalVariable, IField } from '../../types';
 import axios from 'axios';  // Common HTTP library for API requests
 
@@ -660,8 +660,8 @@ The approach for implementing this PRD involves:
 3. **Implementation in TypeScript**:
 
 ```typescript
-import defineApp from "../helpers/define-app";
-import defineAction from "../helpers/define-action";
+import defineApp from "../../helpers/define-app";
+import defineAction from "../../helpers/define-action";
 import type { IGlobalVariable, IField } from "../../types";
 
 // === Default Configuration ===
@@ -2028,26 +2028,18 @@ const triggers = [newEmails];
 
 // Main App Definition
 export default defineApp({
-  // --- Required Metadata ---
-  name: /* TODO: Extract from user prompt */ "Plugin Name",
-  key: /* TODO: Generate from name */ "pluginKey",
-  categories: [/* TODO: Infer from prompt */ "utility"],
-  iconUrl: "{BASE_ICON_URL}/apps/plugin-key/favicon.svg", // TODO: Update key
-  authDocUrl: "{DOCS_URL}/apps/plugin-key/connection", // TODO: Update key
-  supportsConnections: /* TODO: Set based on auth */ false,
-  apiBaseUrl: /* TODO: Set if applicable */ "",
-  baseUrl: /* TODO: Set service base URL */ "",
-
-  // --- Optional Metadata ---
-  description: /* TODO: Generate from prompt */ "Description",
-  docUrl: "{DOCS_URL}/apps/plugin-key", // TODO: Update key
-
-  // --- Optional Components ---
-  auth: auth,
-  dynamicFields: dynamicFields,
-  dynamicData: dynamicData,
-  triggers: triggers,
-  actions: actions,
+    name: 'IMAP',
+    key: 'imap',
+    categories: ['trigger', 'utility', 'social'],
+    iconUrl: '{BASE_ICON_URL}/apps/imap/assets/favicon.svg',
+    authDocUrl: '',
+    supportsConnections: true,
+    baseUrl: '',
+    apiBaseUrl: '',
+    auth,
+    triggers,
+    actions,
+    dynamicData,
 });
 ```
 

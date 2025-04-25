@@ -1,0 +1,77 @@
+# GitHub Repository Info Plugin PRD (Enhanced)
+
+## Background
+Developers and project managers frequently need quick access to basic information about GitHub repositories without navigating to the website.
+
+## Plugin Purpose
+Create a plugin that utilizes the public GitHub REST API to fetch essential details about a specified public repository.
+
+## Plugin Metadata
+*   **Plugin Name:** GitHub Repository Info
+*   **Suggested Key:** `github-repo-info`
+*   **Categories:** `Developer Tools`, `Utility`
+*   **Icon URL:** `{BASE_ICON_URL}/apps/github-repo-info/favicon.svg` (or a generic GitHub icon if specific one not available)
+*   **Auth Doc URL:** `{DOCS_URL}/apps/github-repo-info/connection` (Explain no auth needed)
+*   **Doc URL:** `{DOCS_URL}/apps/github-repo-info`
+*   **Supports Connections:** `false` (uses public API)
+*   **API Base URL:** `https://api.github.com`
+*   **Base URL:** `https://github.com`
+
+## Functional Requirements
+*(Same as before, details reiterated)*
+1. Fetch repository details given the owner and repository name.
+2. Required details: Name, Full Name, Description, Language, Stars, Forks, Open Issues, URL, Owner Username, Owner Avatar URL.
+3. Handle non-existent or private repositories.
+
+## Technical Specifications
+1.  **API:** Official GitHub REST API v3.
+2.  **Authentication:** None required.
+3.  **Headers:** Recommend `Accept: application/vnd.github.v3+json` on requests.
+4.  **API Format:** JSON responses.
+5.  **Error Handling:**
+    *   **404 Not Found:** Throw `Error("Repository not found. It might be private or misspelled.")`
+    *   **403 Forbidden:** Throw `Error("GitHub API rate limit likely exceeded or access forbidden. Please try again later.")`
+    *   **Network/Other Errors:** Throw `Error("Failed to connect to GitHub API: [Original Error Message]")`
+
+## API Endpoints
+*(Same as before)*
+1.  **Get Repository Details:** `GET /repos/{owner}/{repo}`
+    *   Response (200 OK): JSON containing repository details.
+
+## Plugin Settings (Auth Fields)
+*   None required.
+
+## Action Definitions
+
+### 1. Get Repository Info
+*   **Key:** `getRepositoryInfo`
+*   **Name:** Get Repository Info
+*   **Description:** Fetches details for a public GitHub repository.
+*   **Arguments (`IField[]`):**
+    ```typescript
+    [
+      { key: 'owner', label: 'Repository Owner', type: 'string' as const, required: true, description: 'The username or organization that owns the repository (e.g., "octocat").' },
+      { key: 'repo', label: 'Repository Name', type: 'string' as const, required: true, description: 'The name of the repository (e.g., "Spoon-Knife").' }
+    ]
+    ```
+*   **Expected Output (`$.setActionItem({ raw: ... })`):**
+    ```json
+    {
+      "name": "repo_name_here",
+      "fullName": "owner/repo_name_here",
+      "description": "Repository description.",
+      "language": "JavaScript", // or null
+      "stars": 1234,
+      "forks": 567,
+      "openIssues": 89,
+      "url": "https://github.com/owner/repo_name_here",
+      "owner": {
+        "login": "owner_username",
+        "avatarUrl": "https://avatars.githubusercontent.com/u/..."
+      }
+    }
+    ```
+    *(Extract relevant fields like `name`, `full_name`, `description`, `language`, `stargazers_count`, `forks_count`, `open_issues_count`, `html_url`, `owner.login`, `owner.avatar_url` from the GitHub API response)*
+
+## Dynamic Components
+*   None required for this basic functionality.
